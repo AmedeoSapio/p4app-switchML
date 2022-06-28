@@ -19,13 +19,12 @@ syntax = "proto3";
 package switchml_proto;
 
 service Session {
-  rpc RdmaSession (RdmaSessionRequest) returns (RdmaSessionResponse) {}
-  rpc UdpSession (UdpSessionRequest) returns (UdpSessionResponse) {}
-}
-
-service Sync {
-  rpc Barrier(BarrierRequest) returns (BarrierResponse) {}
-  rpc Broadcast(BroadcastRequest) returns (BroadcastResponse) {}
+  rpc RdmaAttach (RdmaAttachRequest) returns (RdmaAttachResponse) {}
+  rpc RdmaCreateSession (RdmaCreateSessionRequest) returns (RdmaCreateSessionResponse) {}
+  rpc UdpAttach (UdpAttachRequest) returns (UdpAttachResponse) {}
+  rpc UdpCreateSession (UdpCreateSessionRequest) returns (UdpCreateSessionResponse) {}
+  rpc Detach (SessionId) returns (Result) {}
+  rpc DestroySession (SessionId) returns (Result) {}
 }
 
 enum PacketSize {
@@ -35,21 +34,17 @@ enum PacketSize {
   MTU_1024 = 3;
 }
 
-message RdmaSessionRequest {
-  uint32 session_id = 1;
-  uint32 rank = 2;
-  uint32 num_workers = 3;
-  uint64 mac = 4;
-  uint32 ipv4 = 5;
-  uint32 rkey = 6;
-  PacketSize packet_size = 7;
-  uint32 message_size = 8;
-  repeated uint32 qpns = 9;
-  repeated uint32 psns = 10;
+message Result {
+  int32 code = 1;
+  string message = 2;
 }
 
-message RdmaSessionResponse {
-  uint64 session_id = 1;
+message SessionId {
+  uint32 id = 1;
+}
+
+message RdmaEndpoint {
+  uint32 rank = 1;
   uint64 mac = 2;
   uint32 ipv4 = 3;
   uint32 rkey = 4;
@@ -57,35 +52,69 @@ message RdmaSessionResponse {
   repeated uint32 psns = 6;
 }
 
-message UdpSessionRequest {
-  uint64 session_id = 1;
-  uint32 rank = 2;
-  uint32 num_workers = 3;
-  uint64 mac = 4;
-  uint32 ipv4 = 5;
-  PacketSize packet_size = 7;
+message RdmaAttachRequest {
+  SessionId session_id = 1;
+  uint32 pool_size = 2;
+  PacketSize packet_size = 3;
+  uint32 message_size = 4;
+  RdmaEndpoint endpoint = 5;
 }
 
-message UdpSessionResponse {
-  uint64 session_id = 1;
+message RdmaCreateSessionRequest {
+  SessionId session_id = 1;
+  uint32 pool_size = 2;
+  PacketSize packet_size = 3;
+  uint32 message_size = 4;
+  repeated RdmaEndpoint workers = 5;
+}
+
+message RdmaCreateSessionResponse {
+  uint32 pool_size = 1;
+  PacketSize packet_size = 2;
+  uint32 message_size = 3;
+  repeated RdmaEndpoint switch = 4;
+  Result error = 5;
+}
+
+message RdmaAttachResponse {
+  uint32 pool_size = 1;
+  PacketSize packet_size = 2;
+  uint32 message_size = 3;
+  RdmaEndpoint switch = 4;
+  Result error = 5;
+}
+
+message UdpEndpoint {
+  uint32 rank = 1;
   uint64 mac = 2;
   uint32 ipv4 = 3;
+  uint32 udp_port = 4;
 }
 
-message BarrierRequest {
-  uint32 num_workers = 1;
+message UdpAttachRequest {
+  SessionId session_id = 1;
+  uint32 pool_size = 2;
+  PacketSize packet_size = 3;
+  UdpEndpoint endpoint = 4;
 }
 
-message BarrierResponse {
+message UdpCreateSessionRequest {
+  uint32 session_id = 1;
+  uint32 pool_size = 2;
+  PacketSize packet_size = 3;
+  repeated UdpEndpoint workers = 4;
 }
 
-message BroadcastRequest {
-  uint64 value = 1;
-  uint32 rank = 2;
-  uint32 num_workers = 3;
-  uint32 root = 4;
+message UdpCreateSessionResponse {
+  uint32 pool_size = 1;
+  PacketSize packet_size = 2;
+  repeated UdpEndpoint switch = 3;
+  Result error = 4;
 }
 
-message BroadcastResponse {
-  uint64 value = 1;
+message UdpAttachResponse {
+  uint32 pool_size = 1;
+  PacketSize packet_size = 2;
+  UdpEndpoint switch = 3;
+  Result error = 4;
 }

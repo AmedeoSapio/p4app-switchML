@@ -20,7 +20,6 @@ import signal
 import asyncio
 import argparse
 import logging
-from concurrent import futures
 
 # Add BF Python to search path
 bfrt_location = '{}/lib/python*/site-packages/tofino'.format(
@@ -226,15 +225,10 @@ class SwitchML(object):
             self.cli.setup(self, prompt='SwitchML', name='SwitchML controller')
 
             # Set up gRPC server
-            self.grpc_server = GRPCServer(ip='[::]',
+            self.grpc_server = GRPCServer(controller=self,
+                                          ip='[::]',
                                           port=50099,
                                           folded_pipe=self.folded_pipe)
-
-            # Run event loop for gRPC server in a separate thread
-            # limit concurrency to 1 to avoid synchronization problems in the BFRT interface
-            self.grpc_executor = futures.ThreadPoolExecutor(max_workers=1)
-
-            self.event_loop = asyncio.get_event_loop()
 
         except KeyboardInterrupt:
             self.critical_error('Stopping controller.')
@@ -380,9 +374,6 @@ class SwitchML(object):
         for session_id in self.multicast_groups.copy():
             if session_id != self.all_ports_mgid:
                 self.clear_multicast_group(session_id)
-
-        # Reset gRPC broadcast/barrier state
-        self.grpc_server.reset()
 
     def clear_rdma_workers(self, session_id):
         ''' Reset UDP workers state for this session '''
@@ -579,26 +570,14 @@ class SwitchML(object):
     def run(self):
         try:
             # Start listening for RPCs
-            self.grpc_future = self.grpc_executor.submit(
-                self.grpc_server.run, self.event_loop, self)
-
+            self.grpc_server.start()
             self.log.info('gRPC server started')
 
             # Start CLI
             self.cli.run()
 
-            # Stop gRPC server and event loop
-            self.event_loop.call_soon_threadsafe(self.grpc_server.stop)
-
-            # Wait for gRPC thread to end
-            self.grpc_future.result()
-
-            # Stop event loop
-            self.event_loop.close()
-
-            # Close gRPC executor
-            self.grpc_executor.shutdown()
-
+            # Stop gRPC server
+            self.grpc_server.stop()
             self.log.info('gRPC server stopped')
 
         except Exception as e:
