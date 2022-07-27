@@ -70,18 +70,20 @@ message RdmaCreateSessionRequest {
 
 message RdmaCreateSessionResponse {
   uint32 pool_size = 1;
-  PacketSize packet_size = 2;
-  uint32 message_size = 3;
-  repeated RdmaEndpoint switch = 4;
-  Result error = 5;
+  uint32 base_index = 2;
+  PacketSize packet_size = 3;
+  uint32 message_size = 4;
+  repeated RdmaEndpoint switch = 5;
+  Result error = 6;
 }
 
 message RdmaAttachResponse {
   uint32 pool_size = 1;
-  PacketSize packet_size = 2;
-  uint32 message_size = 3;
-  RdmaEndpoint switch = 4;
-  Result error = 5;
+  uint32 base_index = 2;
+  PacketSize packet_size = 3;
+  uint32 message_size = 4;
+  RdmaEndpoint switch = 5;
+  Result error = 6;
 }
 
 message UdpEndpoint {
@@ -107,14 +109,16 @@ message UdpCreateSessionRequest {
 
 message UdpCreateSessionResponse {
   uint32 pool_size = 1;
-  PacketSize packet_size = 2;
-  repeated UdpEndpoint switch = 3;
-  Result error = 4;
+  uint32 base_index = 2;
+  PacketSize packet_size = 3;
+  repeated UdpEndpoint switch = 4;
+  Result error = 5;
 }
 
 message UdpAttachResponse {
   uint32 pool_size = 1;
-  PacketSize packet_size = 2;
-  UdpEndpoint switch = 3;
-  Result error = 4;
+  uint32 base_index = 2;
+  PacketSize packet_size = 3;
+  UdpEndpoint switch = 4;
+  Result error = 5;
 }
