@@ -67,33 +67,45 @@ class GRPCServer(switchml_pb2_grpc.SessionServicer):
             # This is a test, return the received parameters
             return switchml_pb2.RdmaCreateSessionResponse(
                 pool_size=request.pool_size,
+                base_index=0,
                 packet_size=request.packet_size,
                 message_size=request.message_size,
                 switch=request.workers,
                 error=result)
-
-        session_id = request.session_id.id
 
         # Get switch addresses
         switch_mac, switch_ipv4 = self._ctrl.get_switch_mac_and_ip()
         switch_mac = int(switch_mac.replace(':', ''), 16)
         switch_ipv4 = int(ipaddress.ip_address(switch_ipv4))
 
-        pool_size = request.pool_size
-        num_workers = len(request.workers)
-        packet_size = PacketSize(request.packet_size)
-        message_size = request.message_size
-        switch = []
+        session_id = request.session_id.id
+        block_size = request.pool_size
 
+        # Allocate new session
+        success, base_index, block_size = self._ctrl.new_session(
+            session_id, block_size)
+
+        if not success:
+            self.log.error(base_index)
+            result.code = 1
+            result.message = base_index
+            return switchml_pb2.RdmaCreateSessionResponse(error=result)
+
+        num_workers = len(request.workers)
+
+        packet_size = PacketSize(request.packet_size)
         if not self._folded_pipe and packet_size == PacketSize.MTU_1024:
             self.log.warning(
                 "Processing 1024B per packet requires a folded pipeline. Using 256B payload."
             )
             packet_size = PacketSize.MTU_256
 
+        message_size = request.message_size
+        switch = []
+
         self.log.debug(
-            '# RDMA:\n Session ID: {}\n Num workers: {}\n Pool size: {}B\n Pkt size: {}B\n Msg size: {}B\n'
-            .format(session_id, num_workers, pool_size,
+            '# RDMA:\n Session ID: {}\n Num workers: {}\n Base index: {}\n Block size: {}B\n Pkt size: {}B\n Msg size: {}B\n'
+            .format(session_id, num_workers, base_index, block_size,
                     str(packet_size).split('.')[1][4:], message_size))
 
         for worker in request.workers:
@@ -115,7 +127,6 @@ class GRPCServer(switchml_pb2_grpc.SessionServicer):
                 self.log.error(error_msg)
                 result.code = 1
                 result.message = error_msg
-
                 return switchml_pb2.RdmaCreateSessionResponse(error=result)
 
             # Mirror this worker's rkey, since the switch doesn't care
@@ -176,7 +187,8 @@ class GRPCServer(switchml_pb2_grpc.SessionServicer):
                         worker.qpns, worker.psns))
 
         return switchml_pb2.RdmaCreateSessionResponse(
-            pool_size=pool_size,
+            pool_size=block_size,
+            base_index=base_index,
             packet_size=int(packet_size),
             message_size=message_size,
             switch=switch,
@@ -187,16 +199,20 @@ class GRPCServer(switchml_pb2_grpc.SessionServicer):
 
         result = switchml_pb2.Error(code=0, message="Success")
 
-        self.log.debug('# RDMA:\n Removed session ID: {}\n'.format(request.id))
+        self.log.debug('# RDMA:\n Removed session ID: {}'.format(request.id))
 
         if self._ctrl:
             # This is not a test
-            self._ctrl.clear_rdma_workers(request.id)
+            success, error_msg = self._ctrl.destroy_session(request.id)
+            if not success:
+                self.log.error(error_msg)
+                result.code = 1
+                result.message = error_msg
 
         return result
 
 
-#def UdpSession(self, request, context):
+# def UdpSession(self, request, context):
 #    ''' UDP session setup '''
 #
 #    # Convert MAC to string

@@ -12,6 +12,26 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+from common import front_panel_regex, mac_address_regex, validate_ip
+from cli import Cli
+from grpc_server import GRPCServer
+from udp_sender import UDPSender
+from rdma_sender import RDMASender
+from next_step_selector import NextStepSelector
+from processor import Processor
+from exponents import Exponents
+from workers_counter import WorkersCounter
+from bitmap_checker import BitmapChecker
+from udp_receiver import UDPReceiver
+from rdma_receiver import RDMAReceiver
+from drop_simulator import DropSimulator
+from arp_icmp_responder import ARPandICMPResponder
+from pre import PRE
+from ports import Ports
+from forwarder import Forwarder
+from pool import Pool
+
+import bfrt_grpc.client as gc
 import os
 import sys
 import glob
@@ -25,25 +45,6 @@ import logging
 bfrt_location = '{}/lib/python*/site-packages/tofino'.format(
     os.environ['SDE_INSTALL'])
 sys.path.append(glob.glob(bfrt_location)[0])
-import bfrt_grpc.client as gc
-
-from forwarder import Forwarder
-from ports import Ports
-from pre import PRE
-from arp_icmp_responder import ARPandICMPResponder
-from drop_simulator import DropSimulator
-from rdma_receiver import RDMAReceiver
-from udp_receiver import UDPReceiver
-from bitmap_checker import BitmapChecker
-from workers_counter import WorkersCounter
-from exponents import Exponents
-from processor import Processor
-from next_step_selector import NextStepSelector
-from rdma_sender import RDMASender
-from udp_sender import UDPSender
-from grpc_server import GRPCServer
-from cli import Cli
-from common import front_panel_regex, mac_address_regex, validate_ip
 
 
 class SwitchML(object):
@@ -65,6 +66,9 @@ class SwitchML(object):
         # RDMA partition key
         self.switch_pkey = 0xffff
 
+        # Pool of slots
+        self.pool = Pool()
+
         # Set all nodes MGID
         self.all_ports_mgid = 0x8000
         self.all_ports_initial_rid = 0x8000
@@ -72,11 +76,17 @@ class SwitchML(object):
         # Multicast group ID -> replication ID (= node ID) -> port
         self.multicast_groups = {self.all_ports_mgid: {}}
 
+        # Worker IP -> session ID
+        self.worker_ip_to_session = {}
+
+        # Session ID -> base index
+        self.session_to_base_index = {}
+
     def critical_error(self, msg):
         self.log.critical(msg)
         print(msg, file=sys.stderr)
         logging.shutdown()
-        #sys.exit(1)
+        # sys.exit(1)
         os.kill(os.getpid(), signal.SIGTERM)
 
     def setup(self,
@@ -125,7 +135,7 @@ class SwitchML(object):
                     loopback_ports = (
                         [64] +  # Pipe 0 CPU ethernet port
                         # Pipe 0: all 16 front-panel ports
-                        #list(range(  0,  0+64,4)) +
+                        # list(range(  0,  0+64,4)) +
                         # Pipe 1: all 16 front-panel ports
                         list(range(128, 128 + 64, 4)) +
                         # Pipe 2: all 16 front-panel ports
@@ -183,13 +193,15 @@ class SwitchML(object):
             self.arp_and_icmp = ARPandICMPResponder(self.target, gc,
                                                     self.bfrt_info)
             # Drop simulator
-            self.drop_simulator = DropSimulator(self.target, gc, self.bfrt_info)
+            self.drop_simulator = DropSimulator(
+                self.target, gc, self.bfrt_info)
             # RDMA receiver
             self.rdma_receiver = RDMAReceiver(self.target, gc, self.bfrt_info)
             # UDP receiver
             self.udp_receiver = UDPReceiver(self.target, gc, self.bfrt_info)
             # Bitmap checker
-            self.bitmap_checker = BitmapChecker(self.target, gc, self.bfrt_info)
+            self.bitmap_checker = BitmapChecker(
+                self.target, gc, self.bfrt_info)
             # Workers counter
             self.workers_counter = WorkersCounter(self.target, gc,
                                                   self.bfrt_info)
@@ -337,16 +349,81 @@ class SwitchML(object):
         self.switch_mac = switch_mac.upper()
         self.switch_ip = switch_ip
 
-        self.arp_and_icmp.set_switch_mac_and_ip(self.switch_mac, self.switch_ip)
+        self.arp_and_icmp.set_switch_mac_and_ip(
+            self.switch_mac, self.switch_ip)
         self.rdma_receiver.set_switch_mac_and_ip(self.switch_mac,
                                                  self.switch_ip)
-        self.udp_receiver.set_switch_mac_and_ip(self.switch_mac, self.switch_ip)
+        self.udp_receiver.set_switch_mac_and_ip(
+            self.switch_mac, self.switch_ip)
         self.rdma_sender.set_switch_mac_and_ip(self.switch_mac, self.switch_ip)
         self.udp_sender.set_switch_mac_and_ip(self.switch_mac, self.switch_ip)
 
     def get_switch_mac_and_ip(self):
         ''' Get switch MAC and IP '''
         return self.switch_mac, self.switch_ip
+
+    def new_session(self, session_id, block_size):
+        ''' Allocate a new session.
+
+            Keyword arguments:
+                session_id -- ID of the session
+                block_size -- size of the requested block
+
+            Returns:
+                (success flag, base index or error message,
+                actual size of the allocated block)
+        '''
+
+        if session_id >= 0x8000:
+            self.log.error(
+                "Client asked for session {} >= {}".format(session_id, 0x8000))
+            return (False, "Maximum session ID is {}".format(0x8000), 0)
+        if session_id in self.multicast_groups:
+            self.log.error("Session {} already exists".format(session_id))
+            return (False, "Session already exists", 0)
+
+        success, base_index, actual_block_size = self.pool.allocate(block_size)
+        if not success:
+            self.log.error("Session {} Allocation error: {}".format(
+                session_id, base_index))
+            return (False, base_index, 0)
+
+        self.session_to_base_index[session_id] = base_index
+
+        # Add multicast group
+        self.pre.add_multicast_group(session_id)
+        self.multicast_groups[session_id] = {}
+
+        self.log.debug("Session ID: {} Requested size: {} Allocated size: {}".format(
+            session_id, block_size, actual_block_size))
+
+        return success, base_index, block_size
+
+    def destroy_session(self, session_id):
+        ''' Destroy a session.
+
+            Keyword arguments:
+                session_id -- ID of the session
+
+            Returns:
+                (success flag, None or error message)
+        '''
+
+        if session_id not in self.multicast_groups or session_id not in self.session_to_base_index:
+            self.log.error(
+                "Destroy for non-existent session {}".format(session_id))
+            return (False, "Session does not exist", 0)
+
+        self.clear_rdma_workers(session_id)
+
+        success = self.pool.deallocate(self.session_to_base_index[session_id])
+        if not success:
+            error_msg = "Session {} Deallocation error.".format(session_id)
+            self.log.error(error_msg)
+            return (False, error_msg)
+
+        del self.session_to_base_index[session_id]
+        return (True, None)
 
     def clear_multicast_group(self, session_id):
         ''' Remove multicast group and nodes for this session '''
@@ -360,7 +437,7 @@ class SwitchML(object):
 
     def reset_workers(self):
         ''' Reset all workers state '''
-        #TODO clear counters
+        # TODO clear counters
         self.udp_receiver._clear()
         self.udp_sender.clear_udp_workers()
         self.rdma_receiver._clear()
@@ -377,9 +454,9 @@ class SwitchML(object):
 
     def clear_rdma_workers(self, session_id):
         ''' Reset UDP workers state for this session '''
-        #TODO selectively remove workers (RDMA or UDP) for
-        #this session, clear RDMA sender/receiver counters,
-        #clear bitmap/count/exponents/processors
+        # TODO selectively remove workers (RDMA or UDP) for
+        # this session, clear RDMA sender/receiver counters,
+        # clear bitmap/count/exponents/processors
         self.rdma_receiver._clear()
         self.rdma_sender.clear_rdma_workers()
         self.bitmap_checker._clear()
@@ -387,11 +464,6 @@ class SwitchML(object):
         self.exponents._clear()
         for p in self.processors:
             p._clear()
-
-        # Multicast groups below 0x8000 are used for sessions
-        # (the mgid is the session id)
-        #TODO session_id = session_id % 0x8000
-        session_id = 0  # Single session supported for now
 
         self.clear_multicast_group(session_id)
 
@@ -431,10 +503,8 @@ class SwitchML(object):
         if not success:
             return (False, dev_port)
 
-        # Multicast groups below 0x8000 are used for sessions
-        # (the mgid is the session id)
-        #TODO session_id = session_id % 0x8000
-        session_id = 0  # Single session supported for now
+        if session_id not in self.multicast_groups:
+            return (False, "No multicast group for session {}".format(session_id))
 
         # Add RDMA receiver/sender entries
         success, error_msg = self.rdma_receiver.add_rdma_worker(
@@ -447,10 +517,7 @@ class SwitchML(object):
                                          worker_rkey, packet_size, message_size,
                                          qpns_and_psns)
 
-        # Add multicast group if not present
-        if session_id not in self.multicast_groups:
-            self.pre.add_multicast_group(session_id)
-            self.multicast_groups[session_id] = {}
+        self.worker_ip_to_session[worker_ip] = session_id
 
         if worker_id in self.multicast_groups[
                 session_id] and self.multicast_groups[session_id][
@@ -465,6 +532,7 @@ class SwitchML(object):
             success, error_msg = self.pre.add_multicast_node(
                 session_id, worker_id, dev_port)
             if not success:
+                # TODO remove this RDMA worker
                 return (False, error_msg)
 
             self.multicast_groups[session_id][worker_id] = dev_port
@@ -476,9 +544,9 @@ class SwitchML(object):
 
     def clear_udp_workers(self, session_id):
         ''' Reset UDP workers state for this session '''
-        #TODO selectively remove workers (RDMA or UDP) for
-        #this session, clear UDP sender/receiver counters,
-        #clear bitmap/count/exponents/processors
+        # TODO selectively remove workers (RDMA or UDP) for
+        # this session, clear UDP sender/receiver counters,
+        # clear bitmap/count/exponents/processors
         self.udp_receiver._clear()
         self.udp_sender.clear_udp_workers()
         self.bitmap_checker._clear()
@@ -489,7 +557,7 @@ class SwitchML(object):
 
         # Multicast groups below 0x8000 are used for sessions
         # (the mgid is the session id)
-        #TODO session_id = session_id % 0x8000
+        # TODO session_id = session_id % 0x8000
         session_id = 0  # Single session supported for now
 
         self.clear_multicast_group(session_id)
@@ -508,7 +576,7 @@ class SwitchML(object):
             Returns:
                 (success flag, None or error message)
         '''
-        #TODO session packet size
+        # TODO session packet size
         if worker_id >= 32:
             error_msg = 'Worker ID {} too large; only 32 workers supported'.format(
                 worker_id)
@@ -528,7 +596,7 @@ class SwitchML(object):
 
         # Multicast groups below 0x8000 are used for sessions
         # (the mgid is the session id)
-        #TODO session_id = session_id % 0x8000
+        # TODO session_id = session_id % 0x8000
         session_id = 0  # Single session supported for now
 
         # Add UDP receiver/sender entries
@@ -540,10 +608,8 @@ class SwitchML(object):
 
         self.udp_sender.add_udp_worker(worker_id, worker_mac, worker_ip)
 
-        # Add multicast group if not present
         if session_id not in self.multicast_groups:
-            self.pre.add_multicast_group(session_id)
-            self.multicast_groups[session_id] = {}
+            return (False, "No multicast group for session {}".format(session_id))
 
         if worker_id in self.multicast_groups[
                 session_id] and self.multicast_groups[session_id][
@@ -616,8 +682,7 @@ if __name__ == '__main__':
         '--ports',
         type=str,
         default='ports.yaml',
-        help=
-        'YAML file describing machines connected to ports. Default: ports.yaml')
+        help='YAML file describing machines connected to ports. Default: ports.yaml')
     argparser.add_argument(
         '--enable-folded-pipe',
         default=False,
