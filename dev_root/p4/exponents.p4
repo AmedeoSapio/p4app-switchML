@@ -76,7 +76,7 @@ control Exponents(
     };
 
     action read1_action() {
-        max_exponent1 = read1_register_action.execute(ig_md.switchml_md.pool_index);
+        //max_exponent1 = read1_register_action.execute(ig_md.switchml_md.pool_index);
     }
 
     table exponent_max {

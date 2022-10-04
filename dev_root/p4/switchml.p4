@@ -15,7 +15,14 @@
 */
 
 #include <core.p4>
+
+#if __TARGET_TOFINO__ == 3
+#include <t3na.p4>
+#elif __TARGET_TOFINO__ == 2
+#include <t2na.p4>
+#else
 #include <tna.p4>
+#endif
 
 #include "configuration.p4"
 #include "types.p4"
@@ -216,7 +223,7 @@ control Egress(
             // If it's BROADCAST, copy rid from PRE to worker id field
             // so tables see it
             if (eg_md.switchml_md.packet_type == packet_type_t.BROADCAST) {
-                eg_md.switchml_md.worker_id = eg_intr_md.egress_rid;
+                eg_md.switchml_md.worker_id = 8w0x00 +++ eg_intr_md.egress_rid[7:0];
             }
 
             if (eg_md.switchml_md.worker_type == worker_type_t.ROCEv2) {

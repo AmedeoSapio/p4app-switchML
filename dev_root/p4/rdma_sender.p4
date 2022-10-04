@@ -130,6 +130,7 @@ control RDMASender(
     table create_roce_packet {
         key = {
             eg_md.switchml_md.worker_id : exact;
+            eg_md.switchml_md.e1 : exact;
         }
         actions = {
             fill_in_roce_fields;
@@ -163,6 +164,7 @@ control RDMASender(
     table fill_in_qpn_and_psn {
         key = {
             eg_md.switchml_md.worker_id  : exact; // replication ID: indicates which worker we're sending to
+            eg_md.switchml_md.e1 : exact;
             eg_md.switchml_md.pool_index : ternary;
         }
         actions = {

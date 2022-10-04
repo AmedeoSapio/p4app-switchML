@@ -39,7 +39,7 @@ parser IngressParser(
     state parse_resubmit {
         // Resubmission not currently used; just skip header
         // assume recirculated packets will never be resubmitted for now
-    	pkt.advance(64);
+    	pkt.advance(PORT_METADATA_SIZE);
         transition parse_ethernet;
     }
 
