@@ -35,7 +35,7 @@ class Forwarder(Control):
         self.mgid = mgid
 
         # Keep set of mac addresses so we can delete them all without deleting the flood rule
-        self.mac_addresses = {}
+        self.fib = {}
 
         # Clear table and add defaults
         self._clear()
@@ -47,9 +47,9 @@ class Forwarder(Control):
         self.table.entry_del(self.target, [
             self.table.make_key(
                 [self.gc.KeyTuple('hdr.ethernet.dst_addr', mac_address)])
-            for mac_address in self.mac_addresses
+            for mac_address in self.fib
         ])
-        self.mac_addresses.clear()
+        self.fib.clear()
 
     def add_default_entries(self):
         ''' Add broadcast and default entries '''
@@ -70,12 +70,12 @@ class Forwarder(Control):
             self.table.make_data([self.gc.DataTuple('flood_mgid', self.mgid)],
                                  'Ingress.forwarder.flood'))
 
-    def add_entry(self, dev_port, mac_address):
+    def add_entry(self, mac_address, dev_port):
         ''' Add one entry.
 
             Keyword arguments:
-                dev_port -- dev port number
                 mac_address -- MAC address reachable through the port
+                dev_port -- dev port number
         '''
 
         self.table.entry_add(self.target, [
@@ -85,17 +85,17 @@ class Forwarder(Control):
             self.table.make_data([self.gc.DataTuple('egress_port', dev_port)],
                                  'Ingress.forwarder.set_egress_port')
         ])
-        self.mac_addresses[mac_address] = dev_port
+        self.fib[mac_address] = dev_port
 
     def add_entries(self, entry_list):
         ''' Add entries.
 
             Keyword arguments:
-                entry_list -- a list of tuples: (dev_port, mac_address)
+                entry_list -- a list of tuples: (mac_address, dev_port)
         '''
 
-        for (dev_port, mac_address) in entry_list:
-            self.add_entry(dev_port, mac_address)
+        for (mac_address, dev_port) in entry_list:
+            self.add_entry(mac_address, dev_port)
 
     def remove_entry(self, mac_address):
         ''' Remove one entry '''
@@ -103,7 +103,7 @@ class Forwarder(Control):
             self.table.make_key(
                 [self.gc.KeyTuple('hdr.ethernet.dst_addr', mac_address)])
         ])
-        del self.mac_addresses[mac_address]
+        del self.fib[mac_address]
 
     def get_dev_port(self, mac):
         ''' Get dev port for MAC address.
@@ -113,15 +113,15 @@ class Forwarder(Control):
         '''
 
         mac = mac.upper()
-        if mac not in self.mac_addresses:
+        if mac not in self.fib:
             return (False, 'MAC address not found')
-        return (True, self.mac_addresses[mac])
+        return (True, self.fib[mac])
 
     def get_macs_on_port(self, dev_port):
         ''' Get MAC addresses associated to a dev port '''
 
         results = []
-        for mac_address, port in self.mac_addresses.items():
+        for mac_address, port in self.fib.items():
             if port == dev_port:
                 results.append(mac_address)
 
@@ -134,4 +134,4 @@ class Forwarder(Control):
                 list of (MAC address, dev port)
         '''
 
-        return self.mac_addresses.items()
+        return self.fib.items()

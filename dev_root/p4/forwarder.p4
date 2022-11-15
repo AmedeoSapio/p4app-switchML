@@ -39,8 +39,8 @@ control Forwarder(
 
     action flood(MulticastGroupId_t flood_mgid) {
         ig_tm_md.mcast_grp_a         = flood_mgid;
-        //We use 0x8000 + dev_port as the RID and XID for the flood group
-        ig_tm_md.level1_exclusion_id = 7w0b1000000 ++ ig_intr_md.ingress_port;
+        //We use 0xFE00 + dev_port as the RID and XID for the flood group
+        ig_tm_md.level1_exclusion_id = 7w0b1111111 ++ ig_intr_md.ingress_port;
         ig_tm_md.bypass_egress = 1w1;
         ig_dprsr_md.drop_ctl[0:0] = 0;
 

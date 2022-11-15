@@ -44,7 +44,7 @@ class Ports(object):
         self.loopback_ports = []
 
         # PktGen table to configure pktgen ports in loopback mode
-        self.pktgen_port_cfg_table = bfrt_info.table_get('$PKTGEN_PORT_CFG')
+        self.pktgen_port_cfg_table = bfrt_info.table_get('tf2.pktgen.port_cfg')
 
     def get_dev_port(self, fp_port, lane):
         ''' Convert front-panel port to dev port.
@@ -149,6 +149,7 @@ class Ports(object):
                 self.gc.DataTuple('$SPEED',
                                   str_val=speed_conversion_table[speed]),
                 self.gc.DataTuple('$FEC', str_val=fec_conversion_table[fec]),
+                self.gc.DataTuple('$N_LANES', 2),
                 self.gc.DataTuple('$AUTO_NEGOTIATION',
                                   str_val=an_conversion_table[an]),
                 self.gc.DataTuple('$PORT_ENABLE', bool_val=True)

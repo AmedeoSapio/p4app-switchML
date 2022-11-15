@@ -225,9 +225,9 @@ class SwitchML(object):
             self.pre.add_multicast_group(self.all_ports_mgid)
 
             # Enable ports
-            success, ports = self.load_ports_file(ports_file)
+            success, error_msg = self.load_ports_file(ports_file)
             if not success:
-                self.critical_error(ports)
+                self.critical_error(error_msg)
 
             # Set switch addresses
             self.set_switch_mac_and_ip(switch_mac, switch_ip)
@@ -255,94 +255,94 @@ class SwitchML(object):
                 ports_file -- yaml file name
 
             Returns:
-                (success flag, list of ports or error message)
+                (success flag, None or error message)
         '''
-
-        ports = []
-        fib = {}
 
         with open(ports_file) as f:
             yaml_ports = yaml.safe_load(f)
 
-            for port, value in yaml_ports['ports'].items():
+        for port, value in yaml_ports['ports'].items():
 
-                re_match = front_panel_regex.match(port)
-                if not re_match:
-                    return (False, 'Invalid port {}'.format(port))
+            re_match = front_panel_regex.match(port)
+            if not re_match:
+                return (False, 'Invalid port {}'.format(port))
 
-                fp_port = int(re_match.group(1))
-                fp_lane = int(re_match.group(2))
+            fp_port = int(re_match.group(1))
+            fp_lane = int(re_match.group(2))
 
-                # Convert all keys to lowercase
-                value = {k.lower(): v for k, v in value.items()}
+            # Convert all keys to lowercase
+            value = {k.lower(): v for k, v in value.items()}
 
-                if 'speed' in value:
-                    try:
-                        speed = int(value['speed'].upper().replace('G',
-                                                                   '').strip())
-                    except ValueError:
-                        return (False, 'Invalid speed for port {}'.format(port))
+            if 'speed' in value:
+                try:
+                    speed = int(value['speed'].upper().replace('G',
+                                                               '').strip())
+                except ValueError:
+                    return (False, 'Invalid speed for port {}'.format(port))
 
-                    if speed not in [10, 25, 40, 50, 100]:
-                        return (
-                            False,
-                            'Port {} speed must be one of 10G,25G,40G,50G,100G'.
-                            format(port))
-                else:
-                    speed = 100
+                if speed not in [10, 25, 40, 50, 100]:
+                    return (
+                        False,
+                        'Port {} speed must be one of 10G,25G,40G,50G,100G'.
+                        format(port))
+            else:
+                speed = 100
 
-                if 'fec' in value:
-                    fec = value['fec'].lower().strip()
-                    if fec not in ['none', 'fc', 'rs']:
-                        return (False,
-                                'Port {} fec must be one of none, fc, rs'.
-                                format(port))
-                else:
-                    fec = 'none'
-
-                if 'autoneg' in value:
-                    an = value['autoneg'].lower().strip()
-                    if an not in ['default', 'enable', 'disable']:
-                        return (
-                            False,
-                            'Port {} autoneg must be one of default, enable, disable'
-                            .format(port))
-                else:
-                    an = 'default'
-
-                if 'mac' not in value:
+            if 'fec' in value:
+                fec = value['fec'].lower().strip()
+                if fec not in ['none', 'fc', 'rs']:
                     return (False,
-                            'Missing MAC address for port {}'.format(port))
+                            'Port {} fec must be one of none, fc, rs'.
+                            format(port))
+            else:
+                fec = 'none'
 
-                success, dev_port = self.ports.get_dev_port(fp_port, fp_lane)
-                if success:
-                    fib[dev_port] = value['mac'].upper()
-                else:
-                    return (False, dev_port)
+            if 'autoneg' in value:
+                an = value['autoneg'].lower().strip()
+                if an not in ['default', 'enable', 'disable']:
+                    return (
+                        False,
+                        'Port {} autoneg must be one of default, enable, disable'
+                        .format(port))
+            else:
+                an = 'default'
 
-                ports.append((fp_port, fp_lane, speed, fec, an))
+            # Add port
+            success, error_msg = self.ports.add_port(
+                fp_port, fp_lane, speed, fec, an)
+            if not success:
+                return (False, error_msg)
 
-        # Add ports
-        success, error_msg = self.ports.add_ports(ports)
-        if not success:
-            return (False, error_msg)
+            success, dev_port = self.ports.get_dev_port(fp_port, fp_lane)
+            if not success:
+                return (False, dev_port)
 
-        # Add forwarding entries
-        self.forwarder.add_entries(fib.items())
+            # Add port to flood multicast group
+            rid = self.all_ports_initial_rid + dev_port
+            success, error_msg = self.pre.add_multicast_node(
+                self.all_ports_mgid, rid, dev_port)
+            if not success:
+                return (False, error_msg)
 
-        # Add ports to flood multicast group
-        rids_and_ports = [
-            (self.all_ports_initial_rid + dp, dp) for dp in fib.keys()
-        ]
-        success, error_msg = self.pre.add_multicast_nodes(
-            self.all_ports_mgid, rids_and_ports)
-        if not success:
-            return (False, error_msg)
+            self.multicast_groups[self.all_ports_mgid][rid] = dev_port
 
-        for r, p in rids_and_ports:
-            self.multicast_groups[self.all_ports_mgid][r] = p
+        for mac, port in yaml_ports['forwarding_table'].items():
 
-        return (True, ports)
+            re_match = front_panel_regex.match(port)
+            if not re_match:
+                return (False, 'Invalid port {}'.format(port))
+
+            fp_port = int(re_match.group(1))
+            fp_lane = int(re_match.group(2))
+
+            success, dev_port = self.ports.get_dev_port(fp_port, fp_lane)
+            if not success:
+                return (False, dev_port)
+
+            # Add forwarding entry
+            self.forwarder.add_entry(mac.upper(), dev_port)
+
+        return (True, None)
 
     def set_switch_mac_and_ip(self, switch_mac, switch_ip):
         ''' Set switch MAC and IP '''
