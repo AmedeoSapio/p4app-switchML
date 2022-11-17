@@ -117,7 +117,6 @@ control RDMAReceiver(
 
     action set_bitmap(
         MulticastGroupId_t mgid,
-        worker_type_t worker_type,
         worker_id_t worker_id,
         num_workers_t num_workers,
         worker_bitmap_t worker_bitmap,
@@ -130,16 +129,15 @@ control RDMAReceiver(
         // Group ID for this job
         ig_md.switchml_md.mgid = mgid;
 
-        ig_md.switchml_md.worker_type = worker_type;
         ig_md.switchml_md.worker_id = worker_id; // Same as rid for worker; used when retransmitting RDMA packets
-        ig_md.switchml_md.dst_port = hdr.udp.src_port;
+        //ig_md.switchml_md.dst_port = hdr.udp.src_port;
 
         ig_md.switchml_rdma_md.rdma_addr = hdr.ib_reth.addr;
         ig_md.switchml_md.tsi = hdr.ib_reth.len;
 
         // Record packet size for use in recirculation
         ig_md.switchml_md.packet_size = packet_size;
-        ig_md.switchml_md.recirc_port_selector = (queue_pair_index_t) QP_INDEX;
+        //ig_md.switchml_md.recirc_port_selector = (queue_pair_index_t) QP_INDEX;
 
         // Get rid of headers we don't want to recirculate
         hdr.ethernet.setInvalid();
@@ -164,14 +162,13 @@ control RDMAReceiver(
 
     action only_packet(
         MulticastGroupId_t mgid,
-        worker_type_t worker_type,
         worker_id_t worker_id,
         num_workers_t num_workers,
         worker_bitmap_t worker_bitmap,
         packet_size_t packet_size) {
 
         // Set common fields
-        set_bitmap(mgid, worker_type, worker_id,  num_workers, worker_bitmap, packet_size);
+        set_bitmap(mgid, worker_id,  num_workers, worker_bitmap, packet_size);
         ig_md.switchml_md.first_packet = true;
         ig_md.switchml_md.last_packet  = true;
 
@@ -190,26 +187,24 @@ control RDMAReceiver(
 
     action only_packet_with_immediate(
         MulticastGroupId_t mgid,
-        worker_type_t worker_type,
         worker_id_t worker_id,
         num_workers_t num_workers,
         worker_bitmap_t worker_bitmap,
         packet_size_t packet_size) {
 
         process_immediate();
-        only_packet(mgid, worker_type, worker_id,  num_workers, worker_bitmap, packet_size);
+        only_packet(mgid, worker_id,  num_workers, worker_bitmap, packet_size);
     }
 
     action first_packet(
         MulticastGroupId_t mgid,
-        worker_type_t worker_type,
         worker_id_t worker_id,
         num_workers_t num_workers,
         worker_bitmap_t worker_bitmap,
         packet_size_t packet_size) {
 
         // Set common fields
-        set_bitmap(mgid, worker_type, worker_id,  num_workers, worker_bitmap, packet_size);
+        set_bitmap(mgid, worker_id,  num_workers, worker_bitmap, packet_size);
         ig_md.switchml_md.first_packet = true;
         ig_md.switchml_md.last_packet  = false;
 
@@ -228,14 +223,13 @@ control RDMAReceiver(
 
     action middle_packet(
         MulticastGroupId_t mgid,
-        worker_type_t worker_type,
         worker_id_t worker_id,
         num_workers_t num_workers,
         worker_bitmap_t worker_bitmap,
         packet_size_t packet_size) {
 
         // Set common fields
-        set_bitmap(mgid, worker_type, worker_id,  num_workers, worker_bitmap, packet_size);
+        set_bitmap(mgid, worker_id,  num_workers, worker_bitmap, packet_size);
         ig_md.switchml_md.first_packet = false;
         ig_md.switchml_md.last_packet  = false;
 
@@ -254,14 +248,13 @@ control RDMAReceiver(
 
     action last_packet(
         MulticastGroupId_t mgid,
-        worker_type_t worker_type,
         worker_id_t worker_id,
         num_workers_t num_workers,
         worker_bitmap_t worker_bitmap,
         packet_size_t packet_size) {
 
         // Set common fields
-        set_bitmap(mgid, worker_type, worker_id,  num_workers, worker_bitmap, packet_size);
+        set_bitmap(mgid, worker_id,  num_workers, worker_bitmap, packet_size);
         ig_md.switchml_md.first_packet = false;
         ig_md.switchml_md.last_packet  = true;
 
@@ -280,14 +273,13 @@ control RDMAReceiver(
 
     action last_packet_with_immediate(
         MulticastGroupId_t mgid,
-        worker_type_t worker_type,
         worker_id_t worker_id,
         num_workers_t num_workers,
         worker_bitmap_t worker_bitmap,
         packet_size_t packet_size) {
 
         process_immediate();
-        last_packet(mgid, worker_type, worker_id,  num_workers, worker_bitmap, packet_size);
+        last_packet(mgid, worker_id,  num_workers, worker_bitmap, packet_size);
     }
 
     // This is a regular packet; just forward
@@ -337,17 +329,17 @@ control RDMAReceiver(
     apply {
         if (receive_roce.apply().hit) {
 
-            // Count received packets for this queue pair
-            rdma_packet_counter.count(ig_md.switchml_md.recirc_port_selector);
+            // // Count received packets for this queue pair
+            // rdma_packet_counter.count(ig_md.switchml_md.recirc_port_selector);
 
-            if (sequence_violation) {
-                // Count sequence violation, drop bit is already set
-                rdma_sequence_violation_counter.count(ig_md.switchml_md.recirc_port_selector);
+            // if (sequence_violation) {
+            //     // Count sequence violation, drop bit is already set
+            //     rdma_sequence_violation_counter.count(ig_md.switchml_md.recirc_port_selector);
 
-            } else if (message_possibly_received) {
-                // Count correctly received message
-                rdma_message_counter.count(ig_md.switchml_md.recirc_port_selector);
-            }
+            // } else if (message_possibly_received) {
+            //     // Count correctly received message
+            //     rdma_message_counter.count(ig_md.switchml_md.recirc_port_selector);
+            // }
         }
     }
 }

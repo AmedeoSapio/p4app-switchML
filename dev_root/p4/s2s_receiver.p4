@@ -14,14 +14,14 @@
   limitations under the License.
 */
 
-#ifndef _UDP_RECEIVER_
-#define _UDP_RECEIVER_
+#ifndef _S2S_RECEIVER_
+#define _S2S_RECEIVER_
 
 #include "configuration.p4"
 #include "types.p4"
 #include "headers.p4"
 
-control UDPReceiver(
+control S2SReceiver(
     inout header_t hdr,
     inout ingress_metadata_t ig_md,
     in ingress_intrinsic_metadata_t ig_intr_md,
@@ -49,7 +49,8 @@ control UDPReceiver(
         MulticastGroupId_t mgid,
         worker_id_t worker_id,
         num_workers_t num_workers,
-        worker_bitmap_t worker_bitmap) {
+        worker_bitmap_t worker_bitmap,
+        packet_size_t packet_size) {
 
         // Count received packet
         receive_counter.count();
@@ -62,20 +63,12 @@ control UDPReceiver(
         ig_md.switchml_md.mgid = mgid;
 
         // Record packet size for use in recirculation
-        ig_md.switchml_md.packet_size = hdr.switchml.size;
+        ig_md.switchml_md.packet_size = packet_size;;
 
         ig_md.switchml_md.worker_id = worker_id;
-        ig_md.switchml_md.dst_port = hdr.udp.src_port;
-        ig_md.switchml_md.src_port = hdr.udp.dst_port;
-        ig_md.switchml_md.tsi = hdr.switchml.tsi;
-        ig_md.switchml_md.job_number = hdr.switchml.job_number;
 
-        // Move the SwitchML set bit in the MSB to the LSB. TODO move set bit to MSB
-        ig_md.switchml_md.pool_index = hdr.switchml.pool_index[13:0] ++ hdr.switchml.pool_index[15:15];
-
-        // Mark packet as single-packet message since it's the UDP protocol
-        ig_md.switchml_md.first_packet = true;
-        ig_md.switchml_md.last_packet = true;
+        ig_md.switchml_md.tsi = hdr.s2s.tsi;
+        ig_md.switchml_md.pool_index = hdr.s2s.pool_index;
 
         // Exponents
         ig_md.switchml_md.e0 = hdr.exponents.e0;
@@ -83,32 +76,57 @@ control UDPReceiver(
 
         // Get rid of headers we don't want to recirculate
         hdr.ethernet.setInvalid();
-        hdr.ipv4.setInvalid();
-        hdr.udp.setInvalid();
-        hdr.switchml.setInvalid();
+        hdr.s2s.setInvalid();
         hdr.exponents.setInvalid();
     }
 
-    table receive_udp {
+    //action s2s_udp(
+    //    MulticastGroupId_t mgid,
+    //    worker_id_t worker_id,
+    //    num_workers_t num_workers,
+    //    worker_bitmap_t worker_bitmap,
+    //    packet_size_t packet_size) {
+
+    //    set_bitmap(mgid, worker_id, num_workers, worker_bitmap, packet_size);
+    //    ig_md.switchml_md.src_port = hdr.s2s_udp.src_port;
+    //    ig_md.switchml_md.dst_port = hdr.s2s_udp.dst_port;
+    //    ig_md.switchml_md.job_number = hdr.s2s_udp.job_number;
+
+    //    // Mark packet as single-packet message since it's the UDP protocol
+    //    ig_md.switchml_md.first_packet = true;
+    //    ig_md.switchml_md.last_packet = true;
+
+    //    hdr.s2s_udp.setInvalid();
+    //}
+
+    action s2s_rdma(
+        MulticastGroupId_t mgid,
+        worker_id_t worker_id,
+        num_workers_t num_workers,
+        worker_bitmap_t worker_bitmap,
+        packet_size_t packet_size) {
+
+        set_bitmap(mgid, worker_id, num_workers, worker_bitmap, packet_size);
+        ig_md.switchml_md.msg_id = hdr.s2s_rdma.msg_id;
+        ig_md.switchml_md.first_packet = hdr.s2s_rdma.first_packet;
+        ig_md.switchml_md.last_packet = hdr.s2s_rdma.last_packet;
+        ig_md.switchml_rdma_md.rdma_addr = hdr.s2s_rdma.rdma_addr;
+
+        hdr.s2s_rdma.setInvalid();
+    }
+
+    table receive_s2s {
         key = {
-            // use ternary matches to support matching on:
-            // * ingress port only like the original design
-            // * source IP and UDP destination port for the SwitchML Eth protocol
-            // * source IP and UDP destination port for the SwitchML UDP protocol
-            // * source IP and destination QP number for the RoCE protocols
-            // * also, parser error values so we can drop bad packets
-            ig_intr_md.ingress_port   : ternary;
             hdr.ethernet.src_addr     : ternary;
             hdr.ethernet.dst_addr     : ternary;
-            hdr.ipv4.src_addr         : ternary;
-            hdr.ipv4.dst_addr         : ternary;
-            hdr.udp.dst_port          : ternary;
+            //hdr.s2s.transport_type    : ternary;
             ig_prsr_md.parser_err     : ternary;
         }
 
         actions = {
             drop;
-            set_bitmap;
+            //s2s_udp;
+            s2s_rdma;
             @defaultonly forward;
         }
         const default_action = forward;
@@ -121,8 +139,9 @@ control UDPReceiver(
     }
 
     apply {
-        receive_udp.apply();
+        receive_s2s.apply();
     }
 }
 
-#endif /* _UDP_RECEIVER_ */
+#endif /* _S2S_RECEIVER_ */
+

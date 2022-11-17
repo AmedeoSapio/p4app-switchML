@@ -165,6 +165,7 @@ struct header_t {
     icmp_h         icmp;
     udp_h          udp;
     switchml_h     switchml;
+//    s2s_h          s2s;
     exponents_h    exponents;
     ib_bth_h       ib_bth;
     ib_reth_h      ib_reth;
@@ -173,6 +174,8 @@ struct header_t {
     data_h         d0;
     data_h         d1;
     ib_icrc_h      ib_icrc;
+    //s2s_udp_h      s2s_udp;
+//    s2s_rdma_h     s2s_rdma;
 }
 
 #endif /* _HEADERS_ */

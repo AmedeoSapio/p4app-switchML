@@ -48,12 +48,25 @@ parser IngressParser(
         ig_md.port_metadata = port_metadata_unpack<port_metadata_t>(pkt);
 
         transition select(ig_intr_md.ingress_port) {
+#if __TARGET_TOFINO__ == 2
+            4: parse_recirculate; // pipe 0 CPU Eth port
+            6: parse_recirculate; // pipe 0 recirc port
+            #TO REMOVE once I can set special ports to loopback
+            24: parse_recirculate; // pipe 0 CPU Eth port
+            26: parse_recirculate; // pipe 0 recirc port
+            ##
+            0: parse_ethernet;   // pipe 0 CPU PCIe port
+            0x080 &&& 0x180: parse_recirculate; // all pipe 1 ports
+            0x100 &&& 0x180: parse_recirculate; // all pipe 2 ports
+            0x180 &&& 0x180: parse_recirculate; // all pipe 3 ports
+#else
             64: parse_recirculate; // pipe 0 CPU Eth port
             68: parse_recirculate; // pipe 0 recirc port
             320: parse_ethernet;   // pipe 2 CPU PCIe port
             0x080 &&& 0x180: parse_recirculate; // all pipe 1 ports
             0x100 &&& 0x180: parse_recirculate; // all pipe 2 ports
             0x180 &&& 0x180: parse_recirculate; // all pipe 3 ports
+#endif
             default:  parse_ethernet;
         }
     }
@@ -92,9 +105,40 @@ parser IngressParser(
         transition select(hdr.ethernet.ether_type) {
             ETHERTYPE_ARP : parse_arp;
             ETHERTYPE_IPV4 : parse_ipv4;
+//            ETHERTYPE_SWITCHML : parse_s2s;
             default : accept_regular;
         }
     }
+
+//    state parse_s2s {
+//        pkt.extract(hdr.s2s);
+//        pkt.extract(hdr.exponents);
+//        hdr.ethernet.setInvalid();
+//        //ig_md.switchml_md.packet_type = hdr.s2s.packet_type;
+//
+//        //transition select(hdr.s2s.transport_type) {
+//        //    (0b0) : parse_s2s_udp;
+//        //    (0b1) : parse_s2s_rdma;
+//        //    default : reject;
+//        //}
+//        transition accept; //parse_s2s_rdma;
+//    }
+
+    //state parse_s2s_udp {
+    //    pkt.extract(hdr.s2s_udp);
+    //    transition select(hdr.s2s.packet_type) {
+    //        (packet_type_t.BROADCAST) : accept;
+    //        default : parse_payload;
+    //    }
+    //}
+
+//    state parse_s2s_rdma {
+//        pkt.extract(hdr.s2s_rdma);
+//        transition select(hdr.s2s.packet_type) {
+//            (packet_type_t.BROADCAST) : accept;
+//            default : parse_payload;
+//        }
+//    }
 
     state parse_arp {
         pkt.extract(hdr.arp);
@@ -141,15 +185,15 @@ parser IngressParser(
         pkt.extract(hdr.ib_bth);
         transition select(hdr.ib_bth.opcode) {
             // include only UC operations here
-            ib_opcode_t.UC_SEND_FIRST                : parse_ib_payload;
-            ib_opcode_t.UC_SEND_MIDDLE               : parse_ib_payload;
-            ib_opcode_t.UC_SEND_LAST                 : parse_ib_payload;
+            ib_opcode_t.UC_SEND_FIRST                : parse_payload;
+            ib_opcode_t.UC_SEND_MIDDLE               : parse_payload;
+            ib_opcode_t.UC_SEND_LAST                 : parse_payload;
             ib_opcode_t.UC_SEND_LAST_IMMEDIATE       : parse_ib_immediate;
-            ib_opcode_t.UC_SEND_ONLY                 : parse_ib_payload;
+            ib_opcode_t.UC_SEND_ONLY                 : parse_payload;
             ib_opcode_t.UC_SEND_ONLY_IMMEDIATE       : parse_ib_immediate;
             ib_opcode_t.UC_RDMA_WRITE_FIRST          : parse_ib_reth;
-            ib_opcode_t.UC_RDMA_WRITE_MIDDLE         : parse_ib_payload;
-            ib_opcode_t.UC_RDMA_WRITE_LAST           : parse_ib_payload;
+            ib_opcode_t.UC_RDMA_WRITE_MIDDLE         : parse_payload;
+            ib_opcode_t.UC_RDMA_WRITE_LAST           : parse_payload;
             ib_opcode_t.UC_RDMA_WRITE_LAST_IMMEDIATE : parse_ib_immediate;
             ib_opcode_t.UC_RDMA_WRITE_ONLY           : parse_ib_reth;
             ib_opcode_t.UC_RDMA_WRITE_ONLY_IMMEDIATE : parse_ib_reth_immediate;
@@ -159,43 +203,32 @@ parser IngressParser(
 
     state parse_ib_immediate {
         pkt.extract(hdr.ib_immediate);
-        transition parse_ib_payload;
+        transition parse_payload;
     }
 
     state parse_ib_reth {
         pkt.extract(hdr.ib_reth);
-        transition parse_ib_payload;
+        transition parse_payload;
     }
 
     state parse_ib_reth_immediate {
         pkt.extract(hdr.ib_reth);
         pkt.extract(hdr.ib_immediate);
-        transition parse_ib_payload;
-    }
-
-    state parse_ib_payload {
-        pkt.extract(hdr.d0);
-        pkt.extract(hdr.d1);
-        // do NOT extract ICRC, since this might be in the middle of a >256B packet
-        ig_md.switchml_md.setValid();
-        ig_md.switchml_md.ether_type_msb = 16w0xffff;
-        ig_md.switchml_md.packet_type = packet_type_t.CONSUME0;
-        ig_md.switchml_rdma_md.setValid();
-        transition accept;
+        transition parse_payload;
     }
 
     state parse_switchml {
         pkt.extract(hdr.switchml);
         pkt.extract(hdr.exponents);
-        transition parse_values;
+        transition parse_payload;
     }
 
-    state parse_values {
+    state parse_payload {
         pkt.extract(hdr.d0);
         pkt.extract(hdr.d1);
-        // At this point we know this is a SwitchML packet that wasn't recirculated,
-        // so mark it for consumption
+        // do NOT extract ICRC, since this might be in the middle of a >256B packet
         ig_md.switchml_md.setValid();
+        ig_md.switchml_md.ether_type_msb = 16w0xffff;
         ig_md.switchml_md.packet_type = packet_type_t.CONSUME0;
         ig_md.switchml_rdma_md.setValid();
         transition accept;

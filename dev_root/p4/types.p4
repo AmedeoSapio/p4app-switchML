@@ -29,9 +29,10 @@ const mirror_type_t MIRROR_TYPE_E2E = 2;
 typedef bit<48> mac_addr_t;
 typedef bit<16> ether_type_t;
 
-const ether_type_t ETHERTYPE_IPV4   = 16w0x0800;
-const ether_type_t ETHERTYPE_ARP    = 16w0x0806;
-const ether_type_t ETHERTYPE_ROCEv1 = 16w0x8915;
+const ether_type_t ETHERTYPE_IPV4     = 16w0x0800;
+const ether_type_t ETHERTYPE_ARP      = 16w0x0806;
+const ether_type_t ETHERTYPE_ROCEv1   = 16w0x8915;
+const ether_type_t ETHERTYPE_SWITCHML = 16w0xCAFE;
 
 // IPv4-specific types;
 typedef bit<32> ipv4_addr_t;
@@ -88,7 +89,8 @@ typedef bit<(max_num_queue_pairs_log2)> queue_pair_index_t;
 enum bit<2> worker_type_t {
     FORWARD_ONLY = 0,
     SWITCHML_UDP = 1,
-    ROCEv2       = 2
+    ROCEv2       = 2,
+    SWITCH       = 3
 }
 
 typedef bit<16> worker_id_t; // Same as rid for worker; used when retransmitting RDMA packets
@@ -171,11 +173,11 @@ header switchml_md_h {
 
     MulticastGroupId_t mgid; // 16 bits
 
-    queue_pair_index_t recirc_port_selector;
+    //queue_pair_index_t recirc_port_selector;
 
     packet_size_t packet_size;
 
-    worker_type_t worker_type;
+    //worker_type_t worker_type;
     worker_id_t worker_id;
 
     // Dest port or QPN to be used for responses
@@ -229,6 +231,35 @@ header switchml_md_h {
 header switchml_rdma_md_h {
     bit<64> rdma_addr;
 }
+
+//@flexible
+//header s2s_h {
+//    packet_type_t packet_type; //4
+//    //bit<1> transport_type; //1
+//    @padding
+//    bit<4> unused;
+//    PortId_t ingress_port; //9 //this can be removed with learning
+//    pool_index_t pool_index; //15
+//    bit<32> tsi;
+//    worker_id_t worker_id; //16
+//}
+
+//@flexible
+//header s2s_udp_h {
+//    bit<16> src_port;
+//    bit<16> dst_port;
+//    bit<8> job_number;
+//}
+//
+//@flexible
+//header s2s_rdma_h {
+//    msg_id_t msg_id; //16
+//    bool first_packet;
+//    bool last_packet;
+//    @padding
+//    bit<6> unused;
+//    bit<64> rdma_addr;
+//}
 
 // Metadata for ingress stage
 @flexible

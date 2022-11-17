@@ -140,6 +140,16 @@ control NextStepSelector(
         count_retransmit = true;
     }
 
+    action send_upward(PortId_t port) {
+        hdr.d1.setInvalid();
+
+        ig_tm_md.ucast_egress_port = port;
+        ig_md.switchml_md.packet_type = packet_type_t.CONSUME0;
+        ig_tm_md.bypass_egress = 1w0;
+        ig_dprsr_md.drop_ctl[0:0] = 0;
+    }
+
+
     action drop() {
         // Mark for drop
         ig_dprsr_md.drop_ctl[0:0] = 1;
@@ -154,6 +164,7 @@ control NextStepSelector(
             ig_md.switchml_md.packet_type : ternary;
             ig_md.switchml_md.first_last_flag : ternary; // 1: last 0: first
             ig_md.switchml_md.map_result : ternary;
+            ig_md.switchml_md.e1 : ternary;
         }
         actions = {
             recirculate_for_CONSUME1;
@@ -169,10 +180,11 @@ control NextStepSelector(
             finish_consume;
             broadcast;
             retransmit;
+            send_upward;
             drop;
         }
         const default_action = drop();
-        size = 128;
+        size = 512;
     }
 
     apply {

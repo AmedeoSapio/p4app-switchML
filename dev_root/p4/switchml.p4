@@ -31,6 +31,8 @@
 #include "drop_simulator.p4"
 #include "udp_receiver.p4"
 #include "udp_sender.p4"
+//#include "s2s_receiver.p4"
+//#include "s2s_sender.p4"
 #include "rdma_receiver.p4"
 #include "rdma_sender.p4"
 #include "bitmap_checker.p4"
@@ -57,6 +59,7 @@ control Ingress(
 
     RDMAReceiver() rdma_receiver;
     UDPReceiver() udp_receiver;
+//    S2SReceiver() s2s_receiver;
     WorkersCounter() workers_counter;
     ReconstructWorkerBitmap() reconstruct_worker_bitmap;
     UpdateAndCheckWorkerBitmap() update_and_check_worker_bitmap;
@@ -107,6 +110,8 @@ control Ingress(
 
             if (hdr.ib_bth.isValid()) {
                 rdma_receiver.apply(hdr, ig_md, ig_intr_md, ig_prsr_md, ig_dprsr_md, ig_tm_md);
+//           } else if (hdr.s2s.isValid()){
+//                s2s_receiver.apply(hdr, ig_md, ig_intr_md, ig_prsr_md, ig_dprsr_md, ig_tm_md);
             } else {
                 udp_receiver.apply(hdr, ig_md, ig_intr_md, ig_prsr_md, ig_dprsr_md, ig_tm_md);
             }
@@ -186,6 +191,8 @@ control Ingress(
 
                 // Decide what to do with this packet
                 next_step_selector.apply(hdr, ig_md, ig_intr_md, ig_dprsr_md, ig_tm_md);
+            } else if (ig_md.switchml_md.packet_type == packet_type_t.BROADCAST) {
+                next_step_selector.apply(hdr, ig_md, ig_intr_md, ig_dprsr_md, ig_tm_md);
             } else {
                 // Handle ARP and ICMP requests
                 arp_icmp_responder.apply(hdr, ig_md, ig_intr_md, ig_prsr_md, ig_dprsr_md, ig_tm_md);
@@ -207,6 +214,38 @@ control Egress(
 
     RDMASender() rdma_sender;
     UDPSender() udp_sender;
+//    S2SSender() s2s_sender;
+
+    // TO MOVE
+    worker_type_t worker_type;
+    action next_step_rocev2() {
+            worker_type = worker_type_t.ROCEv2;
+    }
+
+    action next_step_udp() {
+            worker_type = worker_type_t.SWITCHML_UDP;
+    }
+
+    action next_step_s2s() {
+            worker_type = worker_type_t.SWITCH;
+    }
+
+    table next_step_type {
+        key = {
+            eg_md.switchml_md.e1 : exact;
+            eg_md.switchml_md.packet_type : exact;
+            eg_md.switchml_md.worker_id : ternary;
+        }
+
+        actions = {
+            next_step_rocev2;
+            next_step_udp;
+            next_step_s2s;
+        }
+
+        size = max_num_workers + 1;
+    }
+    /**/
 
     apply {
         if (eg_md.switchml_md.packet_type == packet_type_t.BROADCAST ||
@@ -218,13 +257,15 @@ control Egress(
                 eg_intr_dprs_md.drop_ctl[0:0] = 1;
             }
 
+            next_step_type.apply();
+
             // If it's BROADCAST, copy rid from PRE to worker id field
             // so tables see it
             if (eg_md.switchml_md.packet_type == packet_type_t.BROADCAST) {
                 eg_md.switchml_md.worker_id = 8w0x00 +++ eg_intr_md.egress_rid[7:0];
             }
 
-            if (eg_md.switchml_md.worker_type == worker_type_t.ROCEv2) {
+            if (worker_type == worker_type_t.ROCEv2) {
                 rdma_sender.apply(hdr, eg_md, eg_intr_md, eg_intr_md_from_prsr, eg_intr_dprs_md);
             } else {
                 udp_sender.apply(eg_md, eg_intr_md, hdr);

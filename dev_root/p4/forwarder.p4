@@ -28,7 +28,7 @@ control Forwarder(
     inout ingress_intrinsic_metadata_for_deparser_t ig_dprsr_md,
     inout ingress_intrinsic_metadata_for_tm_t ig_tm_md) {
 
-    action set_egress_port(bit<9> egress_port) {
+    action set_egress_port(PortId_t egress_port) {
         ig_tm_md.ucast_egress_port = egress_port;
         ig_tm_md.bypass_egress = 1w1;
         ig_dprsr_md.drop_ctl[0:0] = 0;
