@@ -161,6 +161,16 @@ control RDMASender(
         hdr.ib_bth.psn = psn_action.execute()[23:0];
     }
 
+    action add_qpn_and_psn2() {
+        hdr.ib_bth.dst_qp = eg_md.switchml_rdma_md.dst_qp;
+        hdr.ib_bth.psn = psn_action.execute()[23:0];
+    }
+
+    action add_qpn_and_psn3() {
+        hdr.ib_bth.dst_qp = eg_md.switchml_rdma_md.dst_qp | 24w16384;
+        hdr.ib_bth.psn = psn_action.execute()[23:0];
+    }
+
     table fill_in_qpn_and_psn {
         key = {
             eg_md.switchml_md.worker_id  : exact; // replication ID: indicates which worker we're sending to
@@ -169,6 +179,8 @@ control RDMASender(
         }
         actions = {
             add_qpn_and_psn;
+            add_qpn_and_psn2;
+            add_qpn_and_psn3;
         }
         size = max_num_queue_pairs;
         registers = psn_register;
@@ -239,6 +251,20 @@ control RDMASender(
             ( true,  true) : set_only_immediate(); // RDMA_WRITE_ONLY_IMMEDIATE;
         }
     }
+    action set_rkey() {
+        hdr.ib_reth.r_key[14:0] = eg_md.switchml_md.pool_index;
+    }
+
+    table restore_pool_index {
+        key = {
+            eg_md.switchml_md.worker_id : exact;
+            eg_md.switchml_md.first_packet : exact;
+        }
+        actions = {
+            set_rkey;
+        }
+        size = 2;
+    }
 
     apply {
         // Get switch IP and switch MAC
@@ -262,6 +288,8 @@ control RDMASender(
 
         // Fill in opcode based on pool index
         set_opcodes.apply();
+
+        restore_pool_index.apply();
     }
 }
 

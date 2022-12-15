@@ -25,6 +25,9 @@ header ethernet_h {
     bit<16>    ether_type;
 }
 
+@pa_no_overlay("ingress", "hdr.ipv4.src_addr")
+@pa_no_overlay("ingress", "hdr.ipv4.dst_addr")
+@pa_no_overlay("ingress", "ig_md.switchml_md.ingress_port")
 header ipv4_h {
     bit<4>        version;
     bit<4>        ihl;

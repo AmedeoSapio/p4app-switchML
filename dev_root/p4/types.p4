@@ -168,68 +168,137 @@ struct port_metadata_t {
 
 // SwitchML metadata header, bridged for recirculation and not exposed outside the switch
 @pa_no_overlay("ingress", "ig_md.switchml_md.simulate_egress_drop")
-@flexible
+//@flexible
 header switchml_md_h {
 
+//    MulticastGroupId_t mgid; // 16 bits
+//
+//    //queue_pair_index_t recirc_port_selector;
+//
+//    packet_size_t packet_size;
+//
+//    //worker_type_t worker_type;
+//    worker_id_t worker_id;
+//
+//    // Dest port or QPN to be used for responses
+//    bit<16> src_port;
+//    bit<16> dst_port;
+//
+//    // What should we do with this packet?
+//    packet_type_t packet_type;
+//
+//    // This needs to be 0xFFFF
+//    bit<16> ether_type_msb;
+//
+//    // Index of pool elements, including both sets
+//    pool_index_t pool_index;
+//
+//    // 0 if first packet, 1 if last packet
+//    num_workers_t first_last_flag;
+//
+//    // 0 if packet is first packet; non-zero if retransmission
+//    worker_bitmap_t map_result;
+//
+//    // Bitmap value before the current worker is ORed in
+//    worker_bitmap_t worker_bitmap_before;
+//
+//    // TSI used to fill in switchML header (or RoCE address later)
+//    bit<32> tsi;
+//    bit<8> job_number;
+//
+//    PortId_t ingress_port;
+//
+//    // Egress drop flag
+//    bool simulate_egress_drop;
+//
+//    // Number of workers
+//    num_workers_t num_workers;
+//
+//    // Exponents
+//    exponent_t e0;
+//    exponent_t e1;
+//
+//    // Message ID
+//    msg_id_t msg_id;
+//
+//    // First/last packet of a message
+//    bool first_packet;
+//    bool last_packet;
+
+    // Message ID
+    msg_id_t msg_id; // 16
+
+    // Exponents
+    exponent_t e1; // 8
+    exponent_t e0; // 8
+
+    // Number of workers
+    num_workers_t num_workers; // 8
+
+    bit<8> job_number;
+
+    // TSI used to fill in switchML header (or RoCE address later)
+    bit<32> tsi;
+
     MulticastGroupId_t mgid; // 16 bits
-
-    //queue_pair_index_t recirc_port_selector;
-
-    packet_size_t packet_size;
-
-    //worker_type_t worker_type;
-    worker_id_t worker_id;
-
-    // Dest port or QPN to be used for responses
-    bit<16> src_port;
-    bit<16> dst_port;
-
-    // What should we do with this packet?
-    packet_type_t packet_type;
 
     // This needs to be 0xFFFF
     bit<16> ether_type_msb;
 
-    // Index of pool elements, including both sets
-    pool_index_t pool_index;
-
-    // 0 if first packet, 1 if last packet
-    num_workers_t first_last_flag;
+    // Bitmap value before the current worker is ORed in
+    worker_bitmap_t worker_bitmap_before;
 
     // 0 if packet is first packet; non-zero if retransmission
     worker_bitmap_t map_result;
 
-    // Bitmap value before the current worker is ORed in
-    worker_bitmap_t worker_bitmap_before;
+    // 0 if first packet, 1 if last packet
+    num_workers_t first_last_flag;
 
-    // TSI used to fill in switchML header (or RoCE address later)
-    bit<32> tsi;
-    bit<8> job_number;
+    // Dest port or QPN to be used for responses
+    bit<16> dst_port;
+    bit<16> src_port;
 
-    PortId_t ingress_port;
+    //worker_type_t worker_type;
+    worker_id_t worker_id;
+
+    @padding
+    bit<6> _pad0;
+
+    // First/last packet of a message
+    bool last_packet;
+    bool first_packet;
+
+    @padding
+    bit<7> _pad1;
 
     // Egress drop flag
     bool simulate_egress_drop;
 
-    // Number of workers
-    num_workers_t num_workers;
+    @padding
+    bit<7> _pad2;
 
-    // Exponents
-    exponent_t e0;
-    exponent_t e1;
+    PortId_t ingress_port;
 
-    // Message ID
-    msg_id_t msg_id;
+    @padding
+    bit<1> _pad3;
 
-    // First/last packet of a message
-    bool first_packet;
-    bool last_packet;
+    // Index of pool elements, including both sets
+    pool_index_t pool_index;
+
+    @padding
+    bit<1> _pad4;
+
+    // What should we do with this packet?
+    packet_type_t packet_type;
+
+    packet_size_t packet_size;
 }
 
 // Bridged metadata header for RDMA
 @flexible
 header switchml_rdma_md_h {
     bit<64> rdma_addr;
+    queue_pair_t      dst_qp;
 }
 
 //@flexible

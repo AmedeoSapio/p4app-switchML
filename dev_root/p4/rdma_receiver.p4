@@ -27,7 +27,8 @@
 // can have is 11264 (22528/2), so this actually only needs 14 bits.
 
 // Compute queue pair index
-#define QP_INDEX (hdr.ib_bth.dst_qp[16+max_num_workers_log2-1:16] ++ hdr.ib_bth.dst_qp[max_num_queue_pairs_per_worker_log2-1:0])
+//#define QP_INDEX (hdr.ib_bth.dst_qp[16+max_num_workers_log2-1:16] ++ hdr.ib_bth.dst_qp[max_num_queue_pairs_per_worker_log2-1:0])
+#define QP_INDEX (hdr.ib_bth.dst_qp[14:0])
 
 // We take the pool index directly from the rkey
 #define POOL_INDEX (hdr.ib_reth.r_key)
@@ -139,6 +140,7 @@ control RDMAReceiver(
         ig_md.switchml_md.packet_size = packet_size;
         //ig_md.switchml_md.recirc_port_selector = (queue_pair_index_t) QP_INDEX;
 
+        ig_md.switchml_rdma_md.dst_qp = hdr.ib_bth.dst_qp;
         // Get rid of headers we don't want to recirculate
         hdr.ethernet.setInvalid();
         hdr.ipv4.setInvalid();
@@ -310,7 +312,7 @@ control RDMAReceiver(
             hdr.ipv4.dst_addr        : exact;
             hdr.ib_bth.partition_key : exact;
             hdr.ib_bth.opcode        : exact;
-            hdr.ib_bth.dst_qp        : ternary; // match on top 8 bits
+            //hdr.ib_bth.dst_qp        : ternary; // match on top 8 bits
         }
         actions = {
             only_packet;

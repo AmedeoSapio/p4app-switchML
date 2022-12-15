@@ -37,8 +37,8 @@ const int max_num_queue_pairs_per_worker = 512;
 const int max_num_queue_pairs_per_worker_log2 = 9;
 
 // Total number of destination queue pairs
-const int max_num_queue_pairs = max_num_queue_pairs_per_worker * max_num_workers;
-const int max_num_queue_pairs_log2 = max_num_queue_pairs_per_worker_log2 + max_num_workers_log2;
+const int max_num_queue_pairs = 32768; //max_num_queue_pairs_per_worker * max_num_workers;
+const int max_num_queue_pairs_log2 = 15; //max_num_queue_pairs_per_worker_log2 + max_num_workers_log2;
 
 // Exclusion ID value to use when we don't want to exclude any nodes
 // during multicast

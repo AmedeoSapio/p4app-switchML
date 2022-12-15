@@ -101,6 +101,24 @@ control Ingress(
     Processor() value30;
     Processor() value31;
 
+//---------------
+    action distribute() {
+        ig_md.switchml_md.packet_type = packet_type_t.BROADCAST;
+    }
+
+    table distribution {
+        key = {
+            ig_intr_md.ingress_port : exact;
+        }
+
+        actions = {
+            distribute;
+        }
+
+        size = 1;
+    }
+//---------------
+
     apply {
         // If this is a SwitchML packet
         // get worker masks, pool base index, other parameters for this packet
@@ -129,6 +147,8 @@ control Ingress(
             ig_md.switchml_md.packet_type == packet_type_t.CONSUME3) {
             reconstruct_worker_bitmap.apply(ig_md);
         }
+
+        distribution.apply();
 
         // If the packet is valid, should be either forwarded or processed
         if (ig_dprsr_md.drop_ctl[0:0] == 1w0) {
@@ -216,40 +236,41 @@ control Egress(
     UDPSender() udp_sender;
 //    S2SSender() s2s_sender;
 
-    // TO MOVE
-    worker_type_t worker_type;
-    action next_step_rocev2() {
-            worker_type = worker_type_t.ROCEv2;
-    }
-
-    action next_step_udp() {
-            worker_type = worker_type_t.SWITCHML_UDP;
-    }
-
-    action next_step_s2s() {
-            worker_type = worker_type_t.SWITCH;
-    }
-
-    table next_step_type {
-        key = {
-            eg_md.switchml_md.e1 : exact;
-            eg_md.switchml_md.packet_type : exact;
-            eg_md.switchml_md.worker_id : ternary;
-        }
-
-        actions = {
-            next_step_rocev2;
-            next_step_udp;
-            next_step_s2s;
-        }
-
-        size = max_num_workers + 1;
-    }
-    /**/
+//    // TO MOVE
+//    worker_type_t worker_type;
+//    action next_step_rocev2() {
+//            worker_type = worker_type_t.ROCEv2;
+//    }
+//
+//    action next_step_udp() {
+//            worker_type = worker_type_t.SWITCHML_UDP;
+//    }
+//
+//    action next_step_s2s() {
+//            worker_type = worker_type_t.SWITCH;
+//    }
+//
+//    table next_step_type {
+//        key = {
+//            eg_md.switchml_md.e1 : exact;
+//            eg_md.switchml_md.packet_type : exact;
+//            eg_md.switchml_md.worker_id : ternary;
+//        }
+//
+//        actions = {
+//            next_step_rocev2;
+//            next_step_udp;
+//            next_step_s2s;
+//        }
+//
+//        size = max_num_workers + 1;
+//    }
+//    /**/
 
     apply {
         if (eg_md.switchml_md.packet_type == packet_type_t.BROADCAST ||
-            eg_md.switchml_md.packet_type == packet_type_t.RETRANSMIT) {
+            eg_md.switchml_md.packet_type == packet_type_t.RETRANSMIT ||
+            eg_md.switchml_md.packet_type == packet_type_t.CONSUME0) {
 
             // Simulate packet drops
             if (eg_md.switchml_md.simulate_egress_drop) {
@@ -257,7 +278,7 @@ control Egress(
                 eg_intr_dprs_md.drop_ctl[0:0] = 1;
             }
 
-            next_step_type.apply();
+//            next_step_type.apply();
 
             // If it's BROADCAST, copy rid from PRE to worker id field
             // so tables see it
@@ -265,11 +286,14 @@ control Egress(
                 eg_md.switchml_md.worker_id = 8w0x00 +++ eg_intr_md.egress_rid[7:0];
             }
 
-            if (worker_type == worker_type_t.ROCEv2) {
-                rdma_sender.apply(hdr, eg_md, eg_intr_md, eg_intr_md_from_prsr, eg_intr_dprs_md);
-            } else {
-                udp_sender.apply(eg_md, eg_intr_md, hdr);
+            if (eg_md.switchml_md.packet_type == packet_type_t.CONSUME0) {
+                eg_md.switchml_md.worker_id = 16w0xffff;
             }
+//            if (eg_md.switchml_md.worker_type == worker_type_t.ROCEv2) {
+                rdma_sender.apply(hdr, eg_md, eg_intr_md, eg_intr_md_from_prsr, eg_intr_dprs_md);
+//            } else {
+//                udp_sender.apply(eg_md, eg_intr_md, hdr);
+//            }
         }
     }
 }

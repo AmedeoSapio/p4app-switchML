@@ -128,6 +128,19 @@ control NextStepSelector(
         count_broadcast = true;
     }
 
+    action broadcast2() {
+
+        // Send to multicast group; egress will fill in destination IP and MAC address
+        ig_tm_md.mcast_grp_a = ig_md.switchml_md.mgid;
+        ig_tm_md.level1_exclusion_id = null_level1_exclusion_id; // don't exclude any nodes
+        ig_md.switchml_md.packet_type = packet_type_t.BROADCAST;
+        ig_tm_md.bypass_egress = 1w0;
+        ig_dprsr_md.drop_ctl[0:0] = 0;
+
+        count_broadcast = true;
+    }
+
+
     action retransmit() {
         hdr.d1.setInvalid();
 
@@ -179,6 +192,7 @@ control NextStepSelector(
             recirculate_for_HARVEST7;
             finish_consume;
             broadcast;
+            broadcast2;
             retransmit;
             send_upward;
             drop;
